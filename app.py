@@ -9,6 +9,11 @@ from langchain.memory import ConversationBufferMemory
 import uuid
 import altair as alt
 import base64  # <-- Needed for encoding
+from langchain_community.tools import WikipediaQueryRun
+from langchain_community.utilities import WikipediaAPIWrapper
+import os
+
+#breakpoint()
 
 # 🎵 Background Audio Setup
 audio_file = open(r"C:\Users\Ervyn\Downloads\FUN\birth_insight_app\videoplayback.m4a", "rb")
@@ -26,6 +31,8 @@ st.markdown(f"""
     </audio>
 """, unsafe_allow_html=True)    
 
+wiki = WikipediaQueryRun(api_wrapper=WikipediaAPIWrapper())
+
 
 # Load data
 @st.cache_data
@@ -42,53 +49,55 @@ st.title("🎉 Malaysian Birthdate Fun Insight Generator")
 # 📅 Input: Birthdate
 birthdate = st.date_input("Select your birthdate:", min_value=datetime(1920,1,1), max_value=datetime(2023,12,31))
 
-# ✅ Data Processing
-filtered = df[df['date'] == pd.to_datetime(birthdate)]
-daily_births = df.groupby('date')['births'].sum().reset_index()
-filtered = daily_births[daily_births['date'] == pd.to_datetime(birthdate)]
-count = int(filtered['births'].values[0]) if not filtered.empty else 0
+if birthdate:  # Only proceed if a date is selected
 
-zodiac, zodiac_fact = get_western_zodiac(birthdate.month, birthdate.day)
-animal, animal_fact = get_chinese_zodiac(birthdate.year)
-weekday = birthdate.strftime("%A")
-month = birthdate.strftime("%B")
-
-sorted_df = daily_births.sort_values('births', ascending=False).reset_index(drop=True)
-
-birthdate_dt = pd.to_datetime(birthdate)
-match = sorted_df[sorted_df['date'] == birthdate_dt]
-
-if not match.empty:
-    rank = match.index[0] + 1
-    total_days = len(sorted_df)
-    percentile = 100 * (1 - rank / total_days)
-else:
-    rank = None
-    percentile = None
+    # ✅ Data Processing
+    daily_births = df.groupby('date')['births'].sum().reset_index()
+    filtered = daily_births[daily_births['date'] == pd.to_datetime(birthdate)]
+    count = int(filtered['births'].values[0]) if not filtered.empty else 0
 
 
-# 📊 Display Insights
-percentile_text = f"- 📈 Your birthday is in the **top {percentile:.1f}%** most common dates!" if percentile is not None else "- 📈 No ranking found for your birthdate."
+    zodiac, zodiac_fact = get_western_zodiac(birthdate.month, birthdate.day)
+    animal, animal_fact = get_chinese_zodiac(birthdate.year)
+    weekday = birthdate.strftime("%A")
+    month = birthdate.strftime("%B")
 
-st.markdown(f"""
-## 🎂 You were born on a **{weekday}**, in **{month} {birthdate.year}**  
-- 🧍 **{count} other Malaysians** share your birthday  
-- ♈ Your **Western Zodiac** is **{zodiac}**  
-> 🧠 *Fun Fact:* {zodiac_fact}
-- 🐉 Your **Chinese Zodiac** is **{animal}**  
-> 🧠 *Fun Fact:* {animal_fact}
-{percentile_text}
-""")
+    sorted_df = daily_births.sort_values('births', ascending=False).reset_index(drop=True)
+
+    birthdate_dt = pd.to_datetime(birthdate)
+    match = sorted_df[sorted_df['date'] == birthdate_dt]
+
+    if not match.empty:
+        rank = match.index[0] + 1
+        total_days = len(sorted_df)
+        percentile = 100 * (1 - rank / total_days)
+    else:
+        rank = None
+        percentile = None
 
 
-tab1, tab2 = st.tabs(["🎂 Insights", "📈 Birth Trend"])
+    # 📊 Display Insights
+    percentile_text = f"- 📈 Your birthday is in the **top {percentile:.1f}%** most common dates!" if percentile is not None else "- 📈 No ranking found for your birthdate."
+
+    st.markdown(f"""
+    ## 🎂 You were born on a **{weekday}**, in **{month} {birthdate.year}**  
+    - 🧍 **{count} other Malaysians** share your birthday  
+    - ♈ Your **Western Zodiac** is **{zodiac}**  
+    > 🧠 *Fun Fact:* {zodiac_fact}
+    - 🐉 Your **Chinese Zodiac** is **{animal}**  
+    > 🧠 *Fun Fact:* {animal_fact}
+    {percentile_text}
+    """)
+
+
+tab1, tab2, tab3 = st.tabs(["🎂 Insights", "📈 Birth Trend", "Events that happened on your Birthday Month"])
 
 with tab1:
 # 🖼 Show stored image
-    st.image(r"C:\Users\Ervyn\Downloads\FUN\birth_insight_app\wakamo.webp", caption="Fun Birthday Facts!", use_column_width=True)
+    st.image(r"C:\Users\Ervyn\Downloads\FUN\birth_insight_app\wakamo.webp", caption="Fun Birthday Facts!", use_container_width =True)
     
     # 💬 Ask your bot below the image
-    st.text_input("Say something about your birthday...", key="tab1_chat_input")
+    #st.text_input("Say something about your birthday...", key="tab1_chat_input")
 
 with tab2:
     # Filter to same month (across all years)
@@ -122,53 +131,114 @@ with tab2:
     )
 
     st.altair_chart(final_chart, use_container_width=True)
+    
+with tab3:
+    # 🔍 Fetch month events from Wikipedia
+    wiki = WikipediaQueryRun(api_wrapper=WikipediaAPIWrapper(lang="en", top_k_results=5))
 
+    month_query = f"Significant historical events in {month} (worldwide or Malaysia)"
+    wiki_results = wiki.run(month_query)
+
+    if wiki_results.strip():
+        month_event_context = f"Here are verified events from Wikipedia for {month}:\n{wiki_results}"
+    else:
+        month_event_context = "No verified events found for this month."
+    
+    # Show events in a static box
+    st.subheader("📜 Historical Events")
+    st.write(month_event_context)
+
+
+    # Store events for later use in chatbot prompt
+    st.session_state.month_event_context = wiki_results.strip()
 
 
 st.markdown("---")
 st.subheader("💬 Ask your Birthday Bot!")
+
+# 🧠 Define LLM and Prompt
+llm = Ollama(model="llama3.2:latest")  # Make sure llama3 is pulled
 
 # 🧠 Personalized Birth Context
 birth_context = f"""
 You are a friendly Malaysian chatbot that gives fun, personalized facts based on a user's birthday.
 
 User's birth profile:
-- Date: {birthdate.strftime('%Y-%m-%d')}
-- Day: {weekday}
-- Month: {month}
+- Year: {birthdate.year}
+- Month: {month}  # full month name
+- Day: {birthdate.day}
+- Weekday: {weekday}
 - Western Zodiac: {zodiac}
 - Chinese Zodiac: {animal}
 - Shared with {count} other Malaysians
 {percentile_text}
 
 Be informative, playful, and speak in a casual tone. Answer like a fun tour guide or a birthday storyteller!
+
+You must follow these rules strictly:
+
+1) Month Event Fact (NO HALLUCINATIONS):
+   - You may include ONE extra section titled "📜 This month in history".
+   - ONLY use the provided month_event_context below.
+   - Do not make up or guess any events if you aren't sure if the events is factual DO NOT INCLUDE.
+   - Do NOT infer, guess, or add details not present in the catalog.
+   - Keep it to 1–2 sentences and include the event's date (as given) and source name in parentheses.
+   - If no events are listed, skip the "This month in history" section.
+
+2) Tone & Format:
+   - Be informative, playful, and casual—like a fun tour guide.
+   - Keep responses concise and factual.
+
+3) Banned Behaviors:
+   - Do not invent or speculate about events.
+
+month_event_context:
+{month_event_context}
 """
+# Combine both into a single history_context
+if "full_context" not in st.session_state:
+    st.session_state.full_context = f"{birth_context}\n\nMonth Event Context:\n{st.session_state.month_event_context}"
+
+
+prompt_template = PromptTemplate(
+    input_variables=["human_input", "history_context"],  # Only variables you will pass manually
+    template="""
+{history_context}
+
+{chat_history}
+User: {human_input}
+Bot:"""
+)
+
+
 
 # 🧠 Initialize memory and log
 if "chat_memory" not in st.session_state:
-    st.session_state.chat_memory = ConversationBufferMemory(return_messages=True)
+    st.session_state.chat_memory = ConversationBufferMemory(
+        memory_key="chat_history",
+        input_key="human_input",
+        return_messages=True
+    )
+
     st.session_state.chat_log = []
+    st.session_state.last_birthdate = birthdate
 
-# 🧠 Define LLM and Prompt
-llm = Ollama(model="llama3.2:latest")  # Make sure llama3 is pulled
+# Clear month events if birthdate changed
+if st.session_state.get("last_birthdate") != birthdate:
+    st.session_state.month_event_context = ""
+    st.session_state.last_birthdate = birthdate
 
-prompt_template = PromptTemplate.from_template("""
-{context}
+# Add static full context only once
+if "full_context_added" not in st.session_state:
+    st.session_state.chat_memory.chat_memory.add_user_message(st.session_state.full_context)
+    st.session_state.full_context_added = True
 
-Conversation history:
-{history}
 
-User: {input}
-Bot:
-""")
-
-# Shared memory instance
-chat_memory = ConversationBufferMemory(return_messages=True)
 
 llm_chain = LLMChain(
     llm=llm,
     prompt=prompt_template,
-    memory=chat_memory,
+    memory=st.session_state.chat_memory,
     verbose=False
 )
 
@@ -176,24 +246,58 @@ llm_chain = LLMChain(
 # 💬 User input
 user_input = st.text_input("Say something about your birthday...", key="chat_input")
 
-
 if user_input:
-    combined_input = f"{birth_context}\n\n{user_input}"
+    #breakpoint()
     response = llm_chain.invoke({
-            "input": combined_input
-    })
+        "human_input": user_input,
+        "history_context": st.session_state.full_context
 
-    # Log with UUID
+    })    
+    st.write(response["text"])
+
+
+    # Store log
     message_id = str(uuid.uuid4())[:8]
     st.session_state.chat_log.append({
         "id": message_id,
-        "user": user_input,
+        "user": user_input or "",
         "bot": response
     })
 
     st.write(f"🤖 **Bot** (msg ID: `{message_id}`): {response}")
 
+# Save chat log to file
+def save_chat_log():
+    log_file = "chat_log.txt"
+    with open(log_file, "w", encoding="utf-8") as f:
+        f.write("=== Chat Exchanges ===\n")
+        for log in st.session_state.chat_log:
+            bot_reply = log['bot']
+            if isinstance(bot_reply, dict) and "text" in bot_reply:
+                bot_reply = bot_reply["text"]  # Extract only the bot's reply text
+            f.write(f"ID: {log['id']}\n")
+            f.write(f"You: {log['user']}\n")
+            f.write(f"Bot: {bot_reply}\n")
+            f.write("-" * 40 + "\n")
+
+        f.write("\n=== Full Chat History (LangChain Memory) ===\n")
+        if "chat_memory" in st.session_state:
+            history_vars = st.session_state.chat_memory.load_memory_variables({})
+            f.write(str(history_vars.get("chat_history", "")))
+        else:
+            f.write("[No chat history found in memory]\n")
+    return log_file
+
 # 📑 Show Chat Log
 with st.expander("📝 Chat Debug Log"):
     for log in st.session_state.chat_log:
-        st.markdown(f"**ID**: `{log['id']}`\n- You: {log['user']}\n- Bot: {log['bot']}")
+        bot_reply = log['bot']["text"] if isinstance(log['bot'], dict) and "text" in log['bot'] else log['bot']
+        st.markdown(f"**ID**: `{log['id']}`\n- You: {log['user']}\n- Bot: {bot_reply}")
+
+    if "chat_memory" in st.session_state:
+        st.text("=== Full Chat History ===")
+        st.text(st.session_state.chat_memory.load_memory_variables({}).get("chat_history", ""))
+
+    if st.button("💾 Save Chat Log to TXT"):
+        file_path = save_chat_log()
+        st.success(f"Chat log saved as `{os.path.abspath(file_path)}`")
