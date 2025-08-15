@@ -271,31 +271,32 @@ if user_input:
         "bot": response
     })
 
-    st.write(f"🤖 **Bot** (msg ID: `{message_id}`): {response}")
+    #st.write(f"🤖 **Bot** (msg ID: `{message_id}`): {response}")
 
-# Save chat log to file
-def save_chat_log():
-    log_file = "chat_log.txt"
-    with open(log_file, "w", encoding="utf-8") as f:
-        f.write("=== Chat Exchanges ===\n")
-        for log in st.session_state.chat_log:
-            bot_reply = log['bot']
-            if isinstance(bot_reply, dict) and "text" in bot_reply:
-                bot_reply = bot_reply["text"]  # Extract only the bot's reply text
-            f.write(f"ID: {log['id']}\n")
-            f.write(f"You: {log['user']}\n")
-            f.write(f"Bot: {bot_reply}\n")
-            f.write("-" * 40 + "\n")
+# Save chat log for download
+def get_chat_log_bytes():
+    output = io.StringIO()  # Use in-memory file
+    output.write("=== Chat Exchanges ===\n")
+    for log in st.session_state.chat_log:
+        bot_reply = log['bot']
+        if isinstance(bot_reply, dict) and "text" in bot_reply:
+            bot_reply = bot_reply["text"]  # Extract only the bot's reply text
+        output.write(f"ID: {log['id']}\n")
+        output.write(f"You: {log['user']}\n")
+        output.write(f"Bot: {bot_reply}\n")
+        output.write("-" * 40 + "\n")
 
-        f.write("\n=== Full Chat History (LangChain Memory) ===\n")
-        if "chat_memory" in st.session_state:
-            history_vars = st.session_state.chat_memory.load_memory_variables({})
-            f.write(str(history_vars.get("chat_history", "")))
-        else:
-            f.write("[No chat history found in memory]\n")
-    return log_file
+    output.write("\n=== Full Chat History (LangChain Memory) ===\n")
+    if "chat_memory" in st.session_state:
+        history_vars = st.session_state.chat_memory.load_memory_variables({})
+        output.write(str(history_vars.get("chat_history", "")))
+    else:
+        output.write("[No chat history found in memory]\n")
+    
+    output.seek(0)
+    return output.getvalue().encode('utf-8')  # Return bytes for download
 
-# 📑 Show Chat Log
+# 📑 Show Chat Log with download button
 with st.expander("📝 Chat Debug Log"):
     for log in st.session_state.chat_log:
         bot_reply = log['bot']["text"] if isinstance(log['bot'], dict) and "text" in log['bot'] else log['bot']
@@ -305,6 +306,10 @@ with st.expander("📝 Chat Debug Log"):
         st.text("=== Full Chat History ===")
         st.text(st.session_state.chat_memory.load_memory_variables({}).get("chat_history", ""))
 
-    if st.button("💾 Save Chat Log to TXT"):
-        file_path = save_chat_log()
-        st.success(f"Chat log saved as `{os.path.abspath(file_path)}`")
+    # Download button
+    st.download_button(
+        label="💾 Download Chat Log",
+        data=get_chat_log_bytes(),
+        file_name="chat_log.txt",
+        mime="text/plain"
+    )
