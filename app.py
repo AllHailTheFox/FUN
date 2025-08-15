@@ -13,6 +13,7 @@ import base64  # <-- Needed for encoding
 from langchain_community.tools import WikipediaQueryRun
 from langchain_community.utilities import WikipediaAPIWrapper
 import os
+import io
 
 #breakpoint()
 
