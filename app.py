@@ -2,7 +2,8 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 from zodiac_utils import get_western_zodiac, get_chinese_zodiac
-from langchain_community.llms import Ollama
+#from langchain_community.llms import Ollama
+from langchain.chat_models import ChatOpenAI
 from langchain.chains import LLMChain
 from langchain_core.prompts import PromptTemplate
 from langchain.memory import ConversationBufferMemory
@@ -16,7 +17,7 @@ import os
 #breakpoint()
 
 # 🎵 Background Audio Setup
-audio_file = open(r"C:\Users\Ervyn\Downloads\FUN\birth_insight_app\videoplayback.m4a", "rb")
+audio_file = open("videoplayback.m4a", "rb")
 audio_bytes = audio_file.read()
 
 # Optional: show player (can remove if you want it fully hidden)
@@ -37,7 +38,7 @@ wiki = WikipediaQueryRun(api_wrapper=WikipediaAPIWrapper())
 # Load data
 @st.cache_data
 def load_birth_data():
-    df = pd.read_csv(r"C:\Users\Ervyn\Downloads\FUN\birth_insight_app\births.csv")  # Ensure it has 'date' and 'count' columns
+    df = pd.read_csv("births.csv")  # Ensure it has 'date' and 'count' columns
     df['date'] = pd.to_datetime(df['date'])
     return df
 
@@ -94,7 +95,7 @@ tab1, tab2, tab3 = st.tabs(["🎂 Insights", "📈 Birth Trend", "Events that ha
 
 with tab1:
 # 🖼 Show stored image
-    st.image(r"C:\Users\Ervyn\Downloads\FUN\birth_insight_app\wakamo.webp", caption="Fun Birthday Facts!", use_container_width =True)
+    st.image("wakamo.webp", caption="Fun Birthday Facts!", use_container_width =True)
     
     # 💬 Ask your bot below the image
     #st.text_input("Say something about your birthday...", key="tab1_chat_input")
@@ -156,8 +157,14 @@ with tab3:
 st.markdown("---")
 st.subheader("💬 Ask your Birthday Bot!")
 
+os.environ["OPENAI_API_KEY"] = st.secrets["OPENAI_API_KEY"]
+
 # 🧠 Define LLM and Prompt
-llm = Ollama(model="llama3.2:latest")  # Make sure llama3 is pulled
+llm = ChatOpenAI(
+    model_name="gpt-4o-mini",  # can also use "gpt-4.1"
+    temperature=0.2,            # adjust for creativity
+    max_tokens=1000
+)
 
 # 🧠 Personalized Birth Context
 birth_context = f"""
